@@ -6,7 +6,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-from drpe_cipher import generate_phase_mask, encrypt_image, decrypt_image, calculate_mse
+from drpe_cipher import generate_phase_mask, encrypt_image, decrypt_image,calculate_mse , inject_key_error, apply_cropping_attack, apply_channel_noise
 
 class DRPEApp:
     def __init__(self, root: tk.Tk):
@@ -22,6 +22,11 @@ class DRPEApp:
         self.r1: np.ndarray | None = None
         self.r2: np.ndarray | None = None
         self.img_dim: int = 128  # Target power-of-two dimension for speed
+
+        # Attack states by Sayem
+        self.key_error_var = tk.DoubleVar(value=0.0)
+        self.crop_attack_var = tk.BooleanVar(value=False)
+        self.noise_attack_var = tk.BooleanVar(value=False)
 
         self._setup_ui()
 
@@ -106,6 +111,35 @@ class DRPEApp:
         )
         btn_save_keys.pack(pady=4)
 
+
+        # --- Sayem CONTROLS ---
+        # Key Sensitivity Slider
+        slider_frame = tk.Frame(right_panel, bg="#1E1E1E")
+        slider_frame.pack(fill=tk.X, pady=10)
+        tk.Label(slider_frame, text="Key Error %:", fg="#FFFFFF", bg="#1E1E1E", font=("Consolas", 9)).pack(side=tk.LEFT)
+        self.scale_error = tk.Scale(
+            slider_frame, from_=0.0, to=5.0, resolution=0.1, orient=tk.HORIZONTAL,
+            variable=self.key_error_var, bg="#1E1E1E", fg="#FFFFFF", highlightthickness=0
+        )
+        self.scale_error.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+
+        # Robustness Toggles
+        self.chk_crop = tk.Checkbutton(
+            right_panel, text="Simulate Cropping Attack", variable=self.crop_attack_var,
+            bg="#1E1E1E", fg="#FFFFFF", selectcolor="#2A2A2A", activebackground="#1E1E1E", activeforeground="#FFFFFF"
+        )
+        self.chk_crop.pack(anchor="w", pady=2)
+
+        self.chk_noise = tk.Checkbutton(
+            right_panel, text="Add Channel Noise", variable=self.noise_attack_var,
+            bg="#1E1E1E", fg="#FFFFFF", selectcolor="#2A2A2A", activebackground="#1E1E1E", activeforeground="#FFFFFF"
+        )
+        self.chk_noise.pack(anchor="w", pady=2)
+        # -----------------------------
+
+
+
+
         self.lbl_mse = tk.Label(
             right_panel, text="Reconstruction MSE: N/A", font=("Consolas", 10, "bold"),
             fg="#FFB703", bg="#1E1E1E"
@@ -176,14 +210,39 @@ class DRPEApp:
 
         self.lbl_enc_status.config(text="Status: Encryption complete.", fg="#00FF66")
 
+
+
+#Fully modified by Sayem
+
+
     def run_decryption(self):
         if self.ciphertext is None:
             messagebox.showwarning("Warning", "No ciphertext found. Run encryption first.")
             return
 
-        self.decrypted_image = decrypt_image(self.ciphertext, self.r1, self.r2)
+        # 1. Fetch attack parameters
+        test_cipher = np.copy(self.ciphertext)
+        
+        # We copy r2 because injecting error into the frequency mask 
+        # is what actually breaks the IDFT structure.
+        test_r2 = np.copy(self.r2) 
+        
+        # 2. Apply Ciphertext Attacks
+        if self.crop_attack_var.get():
+            test_cipher = apply_cropping_attack(test_cipher)
+        if self.noise_attack_var.get():
+            test_cipher = apply_channel_noise(test_cipher)
+            
+        # 3. Apply Key Error (Avalanche Effect test) on the Frequency Mask
+        error_val = self.key_error_var.get()
+        if error_val > 0:
+            # THIS is the line that caused your crash. It must be test_r2!
+            test_r2 = inject_key_error(test_r2, error_val)
 
-        # Calculate Mean Squared Error
+        # 4. Attempt Decryption (Pass self.r1 uncorrupted, pass test_r2 corrupted)
+        self.decrypted_image = decrypt_image(test_cipher, self.r1, test_r2)
+
+        # 5. Calculate MSE & Update UI
         mse = calculate_mse(self.original_image, self.decrypted_image)
         self.lbl_mse.config(text=f"Reconstruction MSE: {mse:.4e}")
 

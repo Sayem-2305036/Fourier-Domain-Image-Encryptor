@@ -75,7 +75,7 @@ def inject_key_error(phase_mask: np.ndarray, error_percentage: float) -> np.ndar
         return phase_mask
         
     
-    noise_factor = error_percentage * 10 
+    noise_factor = error_percentage / 100 
     
     # Generate random phase shifts between -pi and +pi
     global_noise = np.random.uniform(-np.pi, np.pi, size=phase_mask.shape)
@@ -93,7 +93,7 @@ def inject_key_error(phase_mask: np.ndarray, error_percentage: float) -> np.ndar
 # out of the complex ciphertext to see if the frequency-domain encryption distributes
 # the data well enough to survive it.
 
-def apply_cropping_attack(ciphertext: np.ndarray, crop_ratio: float = 0.25) -> np.ndarray:
+def apply_cropping_attack(ciphertext: np.ndarray, crop_ratio: float = 0.0) -> np.ndarray:
     """
     Zeroes out a central block of the ciphertext to simulate data loss.
     """
@@ -113,14 +113,24 @@ def apply_cropping_attack(ciphertext: np.ndarray, crop_ratio: float = 0.25) -> n
 # Real-world channels are noisy. 
 # We will apply Additive White Gaussian Noise (AWGN) to the ciphertext.
 
-def apply_channel_noise(ciphertext: np.ndarray, noise_variance: float = 0.1) -> np.ndarray:
+def apply_channel_noise(ciphertext: np.ndarray, noise_variance: float = 0.0) -> np.ndarray:
     """
-    Adds complex Gaussian noise to the ciphertext to simulate channel degradation.
+    Adds complex Gaussian noise scaled relative to the ciphertext's signal power.
+    noise_variance of 1.0 means Noise Power == Signal Power.
     """
-    M, N = ciphertext.shape
-    # Generate complex noise
-    noise_real = np.random.normal(0, np.sqrt(noise_variance), (M, N))
-    noise_imag = np.random.normal(0, np.sqrt(noise_variance), (M, N))
+    if noise_variance <= 0.0:
+        return ciphertext
+        
+    # 1. Calculate the true average power (energy) of the ciphertext signal
+    signal_power = float(np.mean(np.abs(ciphertext)**2))
+    
+    # 2. Scale the noise power based on the slider ratio
+    target_noise_power = signal_power * noise_variance
+    
+    # 3. Generate complex noise (split power between real and imaginary parts)
+    noise_real = np.random.normal(0, np.sqrt(target_noise_power / 2), ciphertext.shape)
+    noise_imag = np.random.normal(0, np.sqrt(target_noise_power / 2), ciphertext.shape)
+    
     complex_noise = noise_real + 1j * noise_imag
     
     return ciphertext + complex_noise

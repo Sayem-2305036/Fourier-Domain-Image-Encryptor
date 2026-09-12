@@ -79,6 +79,26 @@ class DRPEApp:
         )
         btn_encrypt.pack(pady=4)
 
+        # new button's added here to export ciphertext
+        # 
+        #  
+        btn_export_ciphertext = tk.Button(
+            left_panel, text="Export CipherText", command=self.export_ciphertext,
+            bg="#005F73", fg="#FFFFFF", activebackground="#0A9396", activeforeground="#FFFFFF",
+            font=("Consolas", 10, "bold"), width=18
+        )
+        btn_export_ciphertext.pack(pady=4)
+
+        btn_export_keys = tk.Button(
+            left_panel, text="Export Keys (.npz)", command=self.export_keys,
+            bg="#2A2A2A", fg="#FFFFFF", activebackground="#3A3A3A", activeforeground="#FFFFFF",
+            font=("Consolas", 10), width=18
+        )
+        btn_export_keys.pack(pady=4)
+
+
+
+
         self.lbl_enc_status = tk.Label(
             left_panel, text="Status: Awaiting image...", font=("Consolas", 9),
             fg="#888888", bg="#1E1E1E"
@@ -97,6 +117,24 @@ class DRPEApp:
         )
         right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
 
+
+        #buttons from importing keys and cyphertext
+
+
+        btn_import_ciphertext = tk.Button(
+            right_panel, text="Import CipherText", command=self.import_ciphertext,
+            bg="#005F73", fg="#FFFFFF", activebackground="#0A9396", activeforeground="#FFFFFF",
+            font=("Consolas", 10, "bold"), width=18
+        )
+        btn_import_ciphertext.pack(pady=4)
+        
+        btn_import_keys = tk.Button(
+            right_panel, text="Import Keys (.npz)", command=self.import_keys,
+            bg="#2A2A2A", fg="#FFFFFF", activebackground="#3A3A3A", activeforeground="#FFFFFF",
+            font=("Consolas", 10), width=18
+        )
+        btn_import_keys.pack(pady=4)
+
         btn_decrypt = tk.Button(
             right_panel, text="Decrypt Image", command=self.run_decryption,
             bg="#9B2226", fg="#FFFFFF", activebackground="#AE2012", activeforeground="#FFFFFF",
@@ -104,12 +142,7 @@ class DRPEApp:
         )
         btn_decrypt.pack(pady=4)
 
-        btn_save_keys = tk.Button(
-            right_panel, text="Export Keys (.npz)", command=self.export_keys,
-            bg="#2A2A2A", fg="#FFFFFF", activebackground="#3A3A3A", activeforeground="#FFFFFF",
-            font=("Consolas", 10), width=18
-        )
-        btn_save_keys.pack(pady=4)
+        
 
 
         # --- Sayem CONTROLS ---
@@ -123,18 +156,28 @@ class DRPEApp:
         )
         self.scale_error.pack(side=tk.RIGHT, fill=tk.X, expand=True)
 
-        # Robustness Toggles
-        self.chk_crop = tk.Checkbutton(
-            right_panel, text="Simulate Cropping Attack", variable=self.crop_attack_var,
-            bg="#1E1E1E", fg="#FFFFFF", selectcolor="#2A2A2A", activebackground="#1E1E1E", activeforeground="#FFFFFF"
+        # --- ATTACK SLIDERS ---
+        # Cropping Attack Slider (0% to 100%)
+        crop_frame = tk.Frame(right_panel, bg="#1E1E1E")
+        crop_frame.pack(fill=tk.X, pady=5)
+        tk.Label(crop_frame, text="Crop Area %:", fg="#FFFFFF", bg="#1E1E1E", font=("Consolas", 9)).pack(side=tk.LEFT)
+        self.crop_val_var = tk.DoubleVar(value=0.0)
+        self.scale_crop = tk.Scale(
+            crop_frame, from_=0.0, to=100.0, resolution=1.0, orient=tk.HORIZONTAL,
+            variable=self.crop_val_var, bg="#1E1E1E", fg="#FFFFFF", highlightthickness=0
         )
-        self.chk_crop.pack(anchor="w", pady=2)
+        self.scale_crop.pack(side=tk.RIGHT, fill=tk.X, expand=True)
 
-        self.chk_noise = tk.Checkbutton(
-            right_panel, text="Add Channel Noise", variable=self.noise_attack_var,
-            bg="#1E1E1E", fg="#FFFFFF", selectcolor="#2A2A2A", activebackground="#1E1E1E", activeforeground="#FFFFFF"
+        # Noise Attack Slider (0% to 100%)
+        noise_frame = tk.Frame(right_panel, bg="#1E1E1E")
+        noise_frame.pack(fill=tk.X, pady=5)
+        tk.Label(noise_frame, text="Noise Power %:", fg="#FFFFFF", bg="#1E1E1E", font=("Consolas", 9)).pack(side=tk.LEFT)
+        self.noise_val_var = tk.DoubleVar(value=0.0)
+        self.scale_noise = tk.Scale(
+            noise_frame, from_=0.0, to=100.0, resolution=1.0, orient=tk.HORIZONTAL,
+            variable=self.noise_val_var, bg="#1E1E1E", fg="#FFFFFF", highlightthickness=0
         )
-        self.chk_noise.pack(anchor="w", pady=2)
+        self.scale_noise.pack(side=tk.RIGHT, fill=tk.X, expand=True)
         # -----------------------------
 
 
@@ -228,10 +271,14 @@ class DRPEApp:
         test_r2 = np.copy(self.r2) 
         
         # 2. Apply Ciphertext Attacks
-        if self.crop_attack_var.get():
-            test_cipher = apply_cropping_attack(test_cipher)
-        if self.noise_attack_var.get():
-            test_cipher = apply_channel_noise(test_cipher)
+        crop_val = self.crop_val_var.get()
+        if crop_val > 0:
+            test_cipher = apply_cropping_attack(test_cipher, crop_ratio=(crop_val / 100.0))
+            
+        noise_val = self.noise_val_var.get()
+        if noise_val > 0:
+            test_cipher = apply_channel_noise(test_cipher, noise_variance=(noise_val / 100.0))
+            \
             
         # 3. Apply Key Error (Avalanche Effect test) on the Frequency Mask
         error_val = self.key_error_var.get()
@@ -242,8 +289,11 @@ class DRPEApp:
         self.decrypted_image = decrypt_image(test_cipher, self.r1, test_r2)
 
         # 5. Calculate MSE & Update UI
-        mse = calculate_mse(self.original_image, self.decrypted_image)
-        self.lbl_mse.config(text=f"Reconstruction MSE: {mse:.4e}")
+        if self.original_image is not None:
+            mse = calculate_mse(self.original_image, self.decrypted_image)
+            self.lbl_mse.config(text=f"Reconstruction MSE: {mse:.4e}")
+        else:
+            self.lbl_mse.config(text="Reconstruction MSE: N/A (Receiver Mode)")
 
         self.ax3.clear()
         self.ax3.imshow(self.decrypted_image, cmap="gray")
@@ -263,6 +313,33 @@ class DRPEApp:
         if save_path:
             np.savez(save_path, r1=self.r1, r2=self.r2)
             messagebox.showinfo("Export Successful", f"Keys saved to {os.path.basename(save_path)}")
+
+    def export_ciphertext(self):
+        if self.ciphertext is None:
+            messagebox.showwarning("Warning", "No ciphertext to export.")
+            return
+        save_path = filedialog.asksaveasfilename(defaultextension=".npy", filetypes=[("NumPy Array", "*.npy")])
+        if save_path:
+            np.save(save_path, self.ciphertext)
+            messagebox.showinfo("Success", "Ciphertext exported successfully.")
+
+    def import_ciphertext(self):
+        file_path = filedialog.askopenfilename(filetypes=[("NumPy Array", "*.npy")])
+        if file_path:
+            self.ciphertext = np.load(file_path)
+            self.ax2.clear()
+            self.ax2.imshow(np.abs(self.ciphertext), cmap="inferno")
+            self.ax2.set_title("Ciphertext |C(x,y)|", color="#FFFFFF")
+            self.ax2.axis("off")
+            self.canvas.draw()
+            self.lbl_mse.config(text="Status: Ciphertext Loaded.")
+
+    def import_keys(self):
+        file_path = filedialog.askopenfilename(filetypes=[("NumPy Zip", "*.npz")])
+        if file_path:
+            data = np.load(file_path)
+            self.r1, self.r2 = data['r1'], data['r2']
+            messagebox.showinfo("Success", "Phase Keys imported successfully.")
 
 if __name__ == "__main__":
     root = tk.Tk()

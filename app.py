@@ -49,7 +49,7 @@ class DRPEApp:
         # Panel 1: Input & Encryption (Left)
         left_panel = tk.LabelFrame(
             main_frame,
-            text=" Member 1: Input & Encryption Panel ",
+            text="  Input & Encryption Panel ",
             font=("Consolas", 11, "bold"),
             fg="#00E5FF",
             bg="#1E1E1E",
@@ -88,7 +88,7 @@ class DRPEApp:
         # Panel 2: Decryption & Testing (Right)
         right_panel = tk.LabelFrame(
             main_frame,
-            text=" Member 2: Decryption & Testing Panel ",
+            text=" Decryption & Testing Panel ",
             font=("Consolas", 11, "bold"),
             fg="#FF007F",
             bg="#1E1E1E",
@@ -236,7 +236,6 @@ class DRPEApp:
         # 3. Apply Key Error (Avalanche Effect test) on the Frequency Mask
         error_val = self.key_error_var.get()
         if error_val > 0:
-            # THIS is the line that caused your crash. It must be test_r2!
             test_r2 = inject_key_error(test_r2, error_val)
 
         # 4. Attempt Decryption (Pass self.r1 uncorrupted, pass test_r2 corrupted)

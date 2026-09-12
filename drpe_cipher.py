@@ -13,7 +13,7 @@ def generate_phase_mask(shape: tuple[int, int], seed: int | None = None) -> np.n
 
 def encrypt_image(image: np.ndarray, r1: np.ndarray, r2: np.ndarray) -> np.ndarray:
     """
-    Member 1 Task: Forward DRPE Encryption Pipeline.
+    Forward DRPE Encryption Pipeline.
     Ciphertext = IFFT2( FFT2( I(x, y) * exp(j * R1) ) * exp(j * R2) )
     """
     # 1. Spatial Phase Modulation
@@ -32,7 +32,7 @@ def encrypt_image(image: np.ndarray, r1: np.ndarray, r2: np.ndarray) -> np.ndarr
 
 def decrypt_image(ciphertext: np.ndarray, r1: np.ndarray, r2: np.ndarray) -> np.ndarray:
     """
-    Member 2 Task: Reverse DRPE Decryption Pipeline.
+    Reverse DRPE Decryption Pipeline.
     Recovered = | IFFT2( FFT2( Ciphertext ) * exp(-j * R2) ) * exp(-j * R1) |
     """
     # 1. Forward transform to frequency domain
@@ -53,7 +53,7 @@ def decrypt_image(ciphertext: np.ndarray, r1: np.ndarray, r2: np.ndarray) -> np.
 
 def calculate_mse(original: np.ndarray, recovered: np.ndarray) -> float:
     """
-    Member 2 Task: Computes Mean Squared Error (MSE) between original and recovered signals.
+    Computes Mean Squared Error (MSE) between original and recovered signals.
     """
     return float(np.mean((original - recovered) ** 2))
 
@@ -75,7 +75,7 @@ def inject_key_error(phase_mask: np.ndarray, error_percentage: float) -> np.ndar
         return phase_mask
         
     
-    noise_factor = error_percentage 
+    noise_factor = error_percentage * 10 
     
     # Generate random phase shifts between -pi and +pi
     global_noise = np.random.uniform(-np.pi, np.pi, size=phase_mask.shape)

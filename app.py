@@ -42,9 +42,27 @@ class DRPEApp:
         )
         header.pack(side=tk.TOP, fill=tk.X)
 
+
         # Main Split Container
         main_frame = tk.Frame(self.root, bg="#121212")
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+
+        # Algorithm Selector Mode
+        #added after nprs 
+        self.cipher_mode = tk.StringVar(value="DRPE")
+        
+        mode_frame = tk.Frame(main_frame, bg="#121212")
+        mode_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Radiobutton(mode_frame, text="Standard DRPE (Linear)", variable=self.cipher_mode, value="DRPE", 
+                       bg="#121212", fg="#008612", selectcolor="#2A2A2A", 
+                       font=("Consolas", 10, "bold")).pack(side=tk.LEFT, padx=20)
+        tk.Radiobutton(mode_frame, text="Chaotic DRPE", variable=self.cipher_mode, value="CHAOS", 
+                       bg="#121212", fg="#FF007F", selectcolor="#2A2A2A",
+                         font=("Consolas", 10, "bold")).pack(side=tk.LEFT)
+
+        
 
         # Panel 1: Input & Encryption (Left)
         left_panel = tk.LabelFrame(
@@ -225,10 +243,24 @@ class DRPEApp:
             messagebox.showwarning("Warning", "Please load an image first to establish dimensions.")
             return
 
-        shape = self.original_image.shape
-        self.r1 = generate_phase_mask(shape)
-        self.r2 = generate_phase_mask(shape)
+        # 1. Define the shape FIRST, and restrict it to 2D for RGB support
+        shape = self.original_image.shape[:2]
+
+        # 2. Generate the keys based on the toggle switch
+        if self.cipher_mode.get() == "DRPE":
+            # Old standard random keys
+            self.r1 = np.random.uniform(0, 2 * np.pi, shape)
+            self.r2 = np.random.uniform(0, 2 * np.pi, shape)
+        elif self.cipher_mode.get() == "CHAOS":
+            from chaotic_keys import generate_chaotic_mask
+            # Passwords (initial keys) for R1 and R2
+            self.r1 = generate_chaotic_mask(shape, initial_key=0.34567)
+            self.r2 = generate_chaotic_mask(shape, initial_key=0.76543)
+
+        # 3. Update the UI text (The overwriting lines were removed)
         self.lbl_enc_status.config(text="Status: Phase masks R1 & R2 generated.", fg="#00FF66")
+
+        
 
     def run_encryption(self):
         if self.original_image is None:
@@ -236,6 +268,10 @@ class DRPEApp:
             return
         if self.r1 is None or self.r2 is None:
             self.generate_keys()
+
+        
+        self.ciphertext = encrypt_image(self.original_image, self.r1, self.r2)
+
 
         self.lbl_enc_status.config(text="Status: Encrypting signal...", fg="#E9D8A6")
         self.root.update_idletasks()
@@ -280,13 +316,31 @@ class DRPEApp:
             test_cipher = apply_channel_noise(test_cipher, noise_variance=(noise_val / 100.0))
             \
             
-        # 3. Apply Key Error (Avalanche Effect test) on the Frequency Mask
-        error_val = self.key_error_var.get()
-        if error_val > 0:
-            test_r2 = inject_key_error(test_r2, error_val)
+        # 1. Apply Key Error based on the active mode
+        err_val = self.key_error_var.get()
+        
+        if self.cipher_mode.get() == "DRPE":
+            # Old linear error: sprinkles noise on the final mask
+            test_r2 = inject_key_error(self.r2, err_val)
+            
+        elif self.cipher_mode.get() == "CHAOS":
+            if err_val > 0:
+                from chaotic_keys import generate_chaotic_mask
+                # The original R2 password was 0.76543. 
+                # We simulate a hacker guessing slightly wrong (e.g., slider at 1% = +0.00001 error)
+                wrong_password = 0.76543 + (err_val * 0.00001)
+                
+                # Generate a completely new chaotic mask from the wrong password
+                shape = self.original_image.shape[:2]
+                test_r2 = generate_chaotic_mask(shape, initial_key=wrong_password)
+            else:
+                test_r2 = self.r2
 
-        # 4. Attempt Decryption (Pass self.r1 uncorrupted, pass test_r2 corrupted)
+        # # 4. Attempt Decryption (Pass self.r1 uncorrupted, pass test_r2 corrupted)
+        # self.decrypted_image = decrypt_image(test_cipher, self.r1, test_r2)
+
         self.decrypted_image = decrypt_image(test_cipher, self.r1, test_r2)
+
 
         # 5. Calculate MSE & Update UI
         if self.original_image is not None:

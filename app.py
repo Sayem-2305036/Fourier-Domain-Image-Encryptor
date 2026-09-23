@@ -21,6 +21,7 @@ class DRPEApp:
         self.decrypted_image: np.ndarray | None = None
         self.r1: np.ndarray | None = None
         self.r2: np.ndarray | None = None
+        self.advanced_keys = None  # ADDED: Storage for the dynamic hashing keys
         self.img_dim: int = 128  # Target power-of-two dimension for speed
 
         # Attack states by Sayem
@@ -58,7 +59,7 @@ class DRPEApp:
         tk.Radiobutton(mode_frame, text="Standard DRPE (Linear)", variable=self.cipher_mode, value="DRPE", 
                        bg="#121212", fg="#008612", selectcolor="#2A2A2A", 
                        font=("Consolas", 10, "bold")).pack(side=tk.LEFT, padx=20)
-        tk.Radiobutton(mode_frame, text="Chaotic DRPE", variable=self.cipher_mode, value="CHAOS", 
+        tk.Radiobutton(mode_frame, text="Advanced DRPE", variable=self.cipher_mode, value="ADVANCED", 
                        bg="#121212", fg="#FF007F", selectcolor="#2A2A2A",
                          font=("Consolas", 10, "bold")).pack(side=tk.LEFT)
 
@@ -198,6 +199,16 @@ class DRPEApp:
         self.scale_noise.pack(side=tk.RIGHT, fill=tk.X, expand=True)
         # -----------------------------
 
+        # Bandwidth / Low-Pass Filter Slider
+        self.bandwidth_var = tk.DoubleVar(value=1.0)
+        
+        bw_frame = tk.Frame(right_panel, bg="#121212")
+        bw_frame.pack(fill=tk.X, pady=5)
+        tk.Label(bw_frame, text="Bandwidth % (1.0 = Perfect):", bg="#121212", fg="#00FF66",
+                  width=25, anchor="e").pack(side=tk.LEFT)
+        tk.Scale(bw_frame, variable=self.bandwidth_var, from_=0.01, to=1.0, resolution=0.01, orient=tk.HORIZONTAL, 
+                 bg="#121212", fg="white", highlightthickness=0).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+
 
 
 
@@ -243,22 +254,18 @@ class DRPEApp:
             messagebox.showwarning("Warning", "Please load an image first to establish dimensions.")
             return
 
-        # 1. Define the shape FIRST, and restrict it to 2D for RGB support
         shape = self.original_image.shape[:2]
 
-        # 2. Generate the keys based on the toggle switch
         if self.cipher_mode.get() == "DRPE":
-            # Old standard random keys
             self.r1 = np.random.uniform(0, 2 * np.pi, shape)
             self.r2 = np.random.uniform(0, 2 * np.pi, shape)
-        elif self.cipher_mode.get() == "CHAOS":
-            from chaotic_keys import generate_chaotic_mask
-            # Passwords (initial keys) for R1 and R2
-            self.r1 = generate_chaotic_mask(shape, initial_key=0.34567)
-            self.r2 = generate_chaotic_mask(shape, initial_key=0.76543)
-
-        # 3. Update the UI text (The overwriting lines were removed)
-        self.lbl_enc_status.config(text="Status: Phase masks R1 & R2 generated.", fg="#00FF66")
+            self.lbl_enc_status.config(text="Status: Standard Phase masks R1 & R2 generated.", 
+                                       fg="#00FF66")
+            
+        elif self.cipher_mode.get() == "ADVANCED":
+            self.r1, self.r2 = None, None
+            self.lbl_enc_status.config(text="Status: Keys are created automatically during encryption.",
+                                        fg="#00FF66")
 
         
 
@@ -266,17 +273,28 @@ class DRPEApp:
         if self.original_image is None:
             messagebox.showwarning("Warning", "Load an image first.")
             return
-        if self.r1 is None or self.r2 is None:
-            self.generate_keys()
+
+        #Don't know if I should keep this part or not
+        # if self.r1 is None or self.r2 is None:
+        #     self.generate_keys()
 
         
-        self.ciphertext = encrypt_image(self.original_image, self.r1, self.r2)
+        mode = self.cipher_mode.get()
 
-
-        self.lbl_enc_status.config(text="Status: Encrypting signal...", fg="#E9D8A6")
-        self.root.update_idletasks()
-
-        self.ciphertext = encrypt_image(self.original_image, self.r1, self.r2)
+        if mode == "DRPE":
+            if  (self.r1 is None or self.r2 is None):
+                messagebox.showwarning("Warning", "Please generate phase keys first.")
+                return
+            # Run the old linear encryption
+            
+            self.ciphertext = encrypt_image(self.original_image, self.r1, self.r2)
+            self.lbl_enc_status.config(text="Status: Standard DRPE Encryption complete.", fg="#00FF66")
+            
+        elif mode == "ADVANCED":
+            from advanced_drpe import encrypt_advanced
+            # Run the new pipeline and save the dynamic keys it creates
+            self.ciphertext, self.advanced_keys = encrypt_advanced(self.original_image)
+            self.lbl_enc_status.config(text="Status: Advanced DRPE Encryption complete.", fg="#00FF66")
 
         # Ciphertext is complex: visualize magnitude distribution
         cipher_display = np.abs(self.ciphertext)
@@ -304,7 +322,8 @@ class DRPEApp:
         
         # We copy r2 because injecting error into the frequency mask 
         # is what actually breaks the IDFT structure.
-        test_r2 = np.copy(self.r2) 
+        # test_r2 = np.copy(self.r2)
+        test_r2 = np.copy(self.r2) if self.r2 is not None else None 
         
         # 2. Apply Ciphertext Attacks
         crop_val = self.crop_val_var.get()
@@ -314,32 +333,39 @@ class DRPEApp:
         noise_val = self.noise_val_var.get()
         if noise_val > 0:
             test_cipher = apply_channel_noise(test_cipher, noise_variance=(noise_val / 100.0))
-            \
             
-        # 1. Apply Key Error based on the active mode
+            
+        mode = self.cipher_mode.get()
         err_val = self.key_error_var.get()
         
-        if self.cipher_mode.get() == "DRPE":
+        if mode == "DRPE":
             # Old linear error: sprinkles noise on the final mask
-            test_r2 = inject_key_error(self.r2, err_val)
+            test_r2 = inject_key_error(self.r2, err_val) if err_val > 0 else self.r2
+            self.decrypted_image = decrypt_image(test_cipher, self.r1, test_r2)
             
-        elif self.cipher_mode.get() == "CHAOS":
-            if err_val > 0:
-                from chaotic_keys import generate_chaotic_mask
-                # The original R2 password was 0.76543. 
-                # We simulate a hacker guessing slightly wrong (e.g., slider at 1% = +0.00001 error)
-                wrong_password = 0.76543 + (err_val * 0.00001)
+        elif mode == "ADVANCED":
+            # Safety Check: Stop immediately if keys don't exist yet
+            if self.advanced_keys is None:
+                messagebox.showwarning("Warning", "No advanced keys found. Please encrypt an image in Advanced mode first.")
+                return
                 
-                # Generate a completely new chaotic mask from the wrong password
-                shape = self.original_image.shape[:2]
-                test_r2 = generate_chaotic_mask(shape, initial_key=wrong_password)
-            else:
-                test_r2 = self.r2
+            from advanced_drpe import decrypt_advanced
+            
+            # Unpack the 4 secret keys saved during encryption
+            s1, s2, ax, ay = self.advanced_keys
+            
+            # Avalanche Attack: Add a microscopic error to the starting password
+            if err_val > 0:
+                s1 = s1 + (err_val * 0.00001)
+                s2 = s2 + (err_val * 0.00001)  # Breaking the frequency mask destroys the structure
+                
+            # Get the bandwidth filter value from the slider
+            bandwidth = self.bandwidth_var.get()
+            
+            # Decrypt using the new pipeline and extract the real physical magnitude!
+            raw_decrypted = decrypt_advanced(test_cipher, s1, s2, ax, ay, bandwidth)
+            self.decrypted_image = np.abs(raw_decrypted)
 
-        # # 4. Attempt Decryption (Pass self.r1 uncorrupted, pass test_r2 corrupted)
-        # self.decrypted_image = decrypt_image(test_cipher, self.r1, test_r2)
-
-        self.decrypted_image = decrypt_image(test_cipher, self.r1, test_r2)
 
 
         # 5. Calculate MSE & Update UI
@@ -355,18 +381,59 @@ class DRPEApp:
         self.ax3.axis("off")
         self.canvas.draw()
 
-    def export_keys(self):
-        if self.r1 is None or self.r2 is None:
-            messagebox.showwarning("Warning", "No keys available to export.")
-            return
 
+
+    def export_keys(self):
+        mode = self.cipher_mode.get()
         save_path = filedialog.asksaveasfilename(
             defaultextension=".npz",
             filetypes=[("NumPy Zip Archive", "*.npz")]
         )
-        if save_path:
+        if not save_path:
+            return
+
+        if mode == "DRPE":
+            if self.r1 is None or self.r2 is None:
+                messagebox.showwarning("Warning", "No standard keys available to export.")
+                return
+            # Save the big 2D arrays
             np.savez(save_path, r1=self.r1, r2=self.r2)
-            messagebox.showinfo("Export Successful", f"Keys saved to {os.path.basename(save_path)}")
+            
+        elif mode == "ADVANCED":
+            if self.advanced_keys is None:
+                messagebox.showwarning("Warning", "No advanced keys available to export.")
+                return
+            # Save the four dynamic decimal values
+            s1, s2, ax, ay = self.advanced_keys
+            np.savez(save_path, s1=s1, s2=s2, ax=ax, ay=ay)
+            
+        messagebox.showinfo("Export Successful", f"Keys saved to {os.path.basename(save_path)}")
+
+
+    def import_keys(self):
+        file_path = filedialog.askopenfilename(filetypes=[("NumPy Zip", "*.npz")])
+        if not file_path:
+            return
+            
+        data = np.load(file_path)
+        
+        # Check what kind of variables are saved inside the file
+        if 's1' in data.files:
+            # Rebuild the advanced_keys tuple from the saved decimals
+            self.advanced_keys = (float(data['s1']), float(data['s2']), float(data['ax']), float(data['ay']))
+            self.cipher_mode.set("ADVANCED")  # Auto-switch the UI
+            messagebox.showinfo("Success", "Advanced Keys imported successfully.")
+            
+        elif 'r1' in data.files:
+            # Load the big 2D standard keys
+            self.r1, self.r2 = data['r1'], data['r2']
+            self.cipher_mode.set("DRPE")  # Auto-switch the UI
+            messagebox.showinfo("Success", "Standard Phase Keys imported successfully.")
+            
+        else:
+            messagebox.showwarning("Error", "Unrecognized key format.")
+
+
 
     def export_ciphertext(self):
         if self.ciphertext is None:
@@ -376,6 +443,8 @@ class DRPEApp:
         if save_path:
             np.save(save_path, self.ciphertext)
             messagebox.showinfo("Success", "Ciphertext exported successfully.")
+
+
 
     def import_ciphertext(self):
         file_path = filedialog.askopenfilename(filetypes=[("NumPy Array", "*.npy")])
@@ -388,13 +457,7 @@ class DRPEApp:
             self.canvas.draw()
             self.lbl_mse.config(text="Status: Ciphertext Loaded.")
 
-    def import_keys(self):
-        file_path = filedialog.askopenfilename(filetypes=[("NumPy Zip", "*.npz")])
-        if file_path:
-            data = np.load(file_path)
-            self.r1, self.r2 = data['r1'], data['r2']
-            messagebox.showinfo("Success", "Phase Keys imported successfully.")
-
+    
 if __name__ == "__main__":
     root = tk.Tk()
     app = DRPEApp(root)

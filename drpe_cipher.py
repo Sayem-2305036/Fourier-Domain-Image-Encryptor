@@ -11,44 +11,57 @@ def generate_phase_mask(shape: tuple[int, int], seed: int | None = None) -> np.n
     return rng.uniform(0, 2 * np.pi, size=shape)
 
 
-def encrypt_image(image: np.ndarray, r1: np.ndarray, r2: np.ndarray) -> np.ndarray:
+def encrypt_image(image: np.ndarray, mask1: np.ndarray, mask2: np.ndarray) -> np.ndarray:
     """
-    Forward DRPE Encryption Pipeline.
-    Ciphertext = IFFT2( FFT2( I(x, y) * exp(j * R1) ) * exp(j * R2) )
+    Encrypts an RGB image using standard linear DRPE with proper phase shifts.
     """
-    # 1. Spatial Phase Modulation
-    spatial_modulated = image.astype(complex) * np.exp(1j * r1)
+    encrypted_channels = []
+    
+    # CRITICAL FIX: Convert flat random numbers into complex wave angles (Phase Masks)
+    phase_mask1 = np.exp(1j * mask1)
+    phase_mask2 = np.exp(1j * mask2)
 
-    # 2. Frequency Transformation
-    frequency_spectrum = my_fft2(spatial_modulated)
+    # Loop through the Red (0), Green (1), and Blue (2) layers
+    for i in range(3):
+        channel = image[:, :, i]
 
-    # 3. Frequency Phase Modulation
-    freq_modulated = frequency_spectrum * np.exp(1j * r2)
+        # Apply the complex phase masks
+        step1 = channel * phase_mask1
+        step2 = np.fft.fft2(step1)
+        step3 = step2 * phase_mask2
+        cipher_channel = np.fft.ifft2(step3)
 
-    # 4. Inverse Transformation -> Complex Stationary White Noise
-    ciphertext = my_ifft2(freq_modulated)
-    return ciphertext
+        encrypted_channels.append(cipher_channel)
 
+    # Glue the three encrypted layers back together into a 3D block
+    return np.dstack(encrypted_channels)
 
-def decrypt_image(ciphertext: np.ndarray, r1: np.ndarray, r2: np.ndarray) -> np.ndarray:
+def decrypt_image(ciphertext: np.ndarray, mask1: np.ndarray, mask2: np.ndarray) -> np.ndarray:
     """
-    Reverse DRPE Decryption Pipeline.
-    Recovered = | IFFT2( FFT2( Ciphertext ) * exp(-j * R2) ) * exp(-j * R1) |
+    Decrypts an RGB image using standard linear DRPE.
     """
-    # 1. Forward transform to frequency domain
-    spectrum = my_fft2(ciphertext)
+    decrypted_channels = []
+    
+    # CRITICAL FIX: Reverse the wave angles by using negative phases
+    inv_phase_mask1 = np.exp(-1j * mask1)
+    inv_phase_mask2 = np.exp(-1j * mask2)
 
-    # 2. Multiply by conjugate of frequency phase key exp(-j * R2)
-    demodulated_freq = spectrum * np.exp(-1j * r2)
+    # Loop through the three encrypted color layers
+    for i in range(3):
+        cipher_channel = ciphertext[:, :, i]
 
-    # 3. Shift back to spatial domain
-    spatial_intermediate = my_ifft2(demodulated_freq)
+        # Reverse the standard DRPE math
+        step1 = np.fft.fft2(cipher_channel)
+        step2 = step1 * inv_phase_mask2 
+        step3 = np.fft.ifft2(step2)
+        
+        # Multiply by opposite phase of mask1 and extract physical brightness
+        recovered_channel = np.abs(step3 * inv_phase_mask1)
 
-    # 4. Multiply by conjugate of spatial phase key exp(-j * R1)
-    recovered_complex = spatial_intermediate * np.exp(-1j * r1)
+        decrypted_channels.append(recovered_channel)
 
-    # Recover original intensity magnitude
-    return np.abs(recovered_complex)
+    # Glue the three recovered layers back together
+    return np.dstack(decrypted_channels)
 
 
 def calculate_mse(original: np.ndarray, recovered: np.ndarray) -> float:
@@ -98,7 +111,7 @@ def apply_cropping_attack(ciphertext: np.ndarray, crop_ratio: float = 0.0) -> np
     Zeroes out a central block of the ciphertext to simulate data loss.
     """
     attacked_cipher = np.copy(ciphertext)
-    M, N = attacked_cipher.shape
+    M, N = attacked_cipher.shape[:2]
     
     # Calculate crop dimensions
     crop_m, crop_n = int(M * crop_ratio), int(N * crop_ratio)

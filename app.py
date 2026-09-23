@@ -237,12 +237,17 @@ class DRPEApp:
         if not file_path:
             return
 
-        img = Image.open(file_path).convert("L")  # Convert to grayscale
-        img = img.resize((self.img_dim, self.img_dim))  # Must fit Radix-2 power-of-two constraint
+        # Convert to RGB instead of L (grayscale)
+        img = Image.open(file_path).convert("RGB")
+        img = img.resize((self.img_dim, self.img_dim))
         self.original_image = np.array(img, dtype=float)
 
         self.ax1.clear()
-        self.ax1.imshow(self.original_image, cmap="gray")
+        # Matplotlib needs RGB floats to be scaled between 0 and 1
+        display_img = self.original_image / 255.0
+        
+        # We removed cmap="gray" so it draws in full color
+        self.ax1.imshow(display_img)
         self.ax1.set_title(f"Original ({self.img_dim}x{self.img_dim})", color="#FFFFFF")
         self.ax1.axis("off")
         self.canvas.draw()
@@ -296,17 +301,24 @@ class DRPEApp:
             self.ciphertext, self.advanced_keys = encrypt_advanced(self.original_image)
             self.lbl_enc_status.config(text="Status: Advanced DRPE Encryption complete.", fg="#00FF66")
 
-        # Ciphertext is complex: visualize magnitude distribution
+        # # Ciphertext is complex: visualize magnitude distribution
+        # cipher_display = np.abs(self.ciphertext)
+
+        # self.ax2.clear()
+        # self.ax2.imshow(cipher_display, cmap="inferno")
+        # self.ax2.set_title("Ciphertext |C(x,y)| (White Noise)", color="#FFFFFF")
+        # self.ax2.axis("off")
+        # self.canvas.draw()
+
+        # Extract magnitude and scale it for the screen
         cipher_display = np.abs(self.ciphertext)
-
+        cipher_display = cipher_display / np.max(cipher_display)
+        
         self.ax2.clear()
-        self.ax2.imshow(cipher_display, cmap="inferno")
+        self.ax2.imshow(cipher_display) # Removed cmap="inferno"
         self.ax2.set_title("Ciphertext |C(x,y)| (White Noise)", color="#FFFFFF")
-        self.ax2.axis("off")
-        self.canvas.draw()
-
         self.lbl_enc_status.config(text="Status: Encryption complete.", fg="#00FF66")
-
+        self.canvas.draw()
 
 
 #Fully modified by Sayem
@@ -339,7 +351,24 @@ class DRPEApp:
         err_val = self.key_error_var.get()
         
         if mode == "DRPE":
-            # Old linear error: sprinkles noise on the final mask
+            # 1. Apply Bandwidth Filter (Low-Pass)
+            bandwidth = self.bandwidth_var.get()
+            if bandwidth < 1.0:
+                from filter_engine import apply_low_pass_filter
+                filtered_channels = []
+                
+                # We have to filter all 3 color layers individually
+                for i in range(3):
+                    channel = test_cipher[:, :, i]
+                    # Convert to waves, shift low frequencies to the center, filter, and convert back
+                    freq = np.fft.fftshift(np.fft.fft2(channel))
+                    freq_filtered = apply_low_pass_filter(freq, bandwidth)
+                    channel_filtered = np.fft.ifft2(np.fft.ifftshift(freq_filtered))
+                    filtered_channels.append(channel_filtered)
+                    
+                test_cipher = np.dstack(filtered_channels)
+
+            # 2. Inject Key Error and Decrypt
             test_r2 = inject_key_error(self.r2, err_val) if err_val > 0 else self.r2
             self.decrypted_image = decrypt_image(test_cipher, self.r1, test_r2)
             
@@ -375,10 +404,15 @@ class DRPEApp:
         else:
             self.lbl_mse.config(text="Reconstruction MSE: N/A (Receiver Mode)")
 
+        # Scale the decrypted output for the screen
+        dec_display = self.decrypted_image / 255.0
+        # Clip any math overflows so the image looks clean
+        dec_display = np.clip(dec_display, 0, 1)
+
         self.ax3.clear()
-        self.ax3.imshow(self.decrypted_image, cmap="gray")
-        self.ax3.set_title("Decrypted Image", color="#FFFFFF")
-        self.ax3.axis("off")
+        self.ax3.imshow(dec_display) 
+        self.ax3.set_title("Decrypted Image", color="#FFFFFF") # Restored title
+        self.ax3.axis("off") # Restored axis removal
         self.canvas.draw()
 
 
@@ -450,8 +484,13 @@ class DRPEApp:
         file_path = filedialog.askopenfilename(filetypes=[("NumPy Array", "*.npy")])
         if file_path:
             self.ciphertext = np.load(file_path)
+            
+            # Extract magnitude and scale it for the RGB screen
+            cipher_display = np.abs(self.ciphertext)
+            cipher_display = cipher_display / np.max(cipher_display)
+            
             self.ax2.clear()
-            self.ax2.imshow(np.abs(self.ciphertext), cmap="inferno")
+            self.ax2.imshow(cipher_display) # Removed cmap="inferno"
             self.ax2.set_title("Ciphertext |C(x,y)|", color="#FFFFFF")
             self.ax2.axis("off")
             self.canvas.draw()

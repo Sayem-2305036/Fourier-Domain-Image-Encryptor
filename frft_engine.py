@@ -68,7 +68,7 @@ def frft_2d(image: np.ndarray, alpha_x: float, alpha_y: float) -> np.ndarray:
     """
     Applies the FrFT to a 2D image by rotating the rows, then the columns.
     """
-    rows, cols = image.shape
+    rows, cols = image.shape[:2]
     intermediate = np.zeros_like(image, dtype=complex)
     final_result = np.zeros_like(image, dtype=complex)
 

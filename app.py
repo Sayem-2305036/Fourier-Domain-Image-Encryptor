@@ -73,6 +73,7 @@ class DRPEApp:
         # Algorithm Selector Mode
         #added after nprs 
         self.cipher_mode = tk.StringVar(value="DRPE")
+        self.cipher_mode.trace_add("write", lambda *args: self._update_key_button_labels())
         
         mode_frame = tk.Frame(main_frame, bg="#121212")
         mode_frame.pack(fill=tk.X, pady=5)
@@ -135,6 +136,7 @@ class DRPEApp:
             font=("Consolas", 10), width=18
         )
         btn_export_keys.pack(pady=4)
+        self.btn_export_keys = btn_export_keys  # Keep reference to update label
 
 
 
@@ -174,6 +176,7 @@ class DRPEApp:
             font=("Consolas", 10), width=18
         )
         btn_import_keys.pack(pady=4)
+        self.btn_import_keys = btn_import_keys  # Keep reference to update label
 
         btn_decrypt = tk.Button(
             right_panel, text="Decrypt Image", command=self.run_decryption,
@@ -189,7 +192,8 @@ class DRPEApp:
         # Key Sensitivity Slider
         slider_frame = tk.Frame(right_panel, bg="#1E1E1E")
         slider_frame.pack(fill=tk.X, pady=10)
-        tk.Label(slider_frame, text="Key Error %:", fg="#FFFFFF", bg="#1E1E1E", font=("Consolas", 9)).pack(side=tk.LEFT)
+        self.lbl_key_error = tk.Label(slider_frame, text="Key Error %:", fg="#FFFFFF", bg="#1E1E1E", font=("Consolas", 9))
+        self.lbl_key_error.pack(side=tk.LEFT)
         self.scale_error = tk.Scale(
             slider_frame, from_=0.0, to=5.0, resolution=0.1, orient=tk.HORIZONTAL,
             variable=self.key_error_var, bg="#1E1E1E", fg="#FFFFFF", highlightthickness=0
@@ -252,6 +256,18 @@ class DRPEApp:
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
         canvas_widget = self.canvas.get_tk_widget()
         canvas_widget.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    def _update_key_button_labels(self):
+        """Update button labels based on cipher mode."""
+        mode = self.cipher_mode.get()
+        if mode == "DRPE":
+            self.btn_export_keys.config(text="Export Keys (.npz)")
+            self.btn_import_keys.config(text="Import Keys (.npz)")
+            self.lbl_key_error.config(text="Key Error %:")
+        else:  # ADVANCED
+            self.btn_export_keys.config(text="Export Seeds (.npz)")
+            self.btn_import_keys.config(text="Import Seeds (.npz)")
+            self.lbl_key_error.config(text="Seed Error %:")
 
     def load_image(self):
         file_path = filedialog.askopenfilename(

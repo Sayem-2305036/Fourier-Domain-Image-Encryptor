@@ -38,6 +38,15 @@ class DRPEApp:
         header_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
         header_frame.pack_propagate(False)  # Prevent size changes
         
+        # Left side - Exit button
+        btn_exit = tk.Button(
+            header_frame, text="Exit", command=self.exit_app,
+            bg="#DC2F02", fg="#FFFFFF", activebackground="#F77F00", activeforeground="#FFFFFF",
+            font=("Consolas", 9, "bold"), width=8
+        )
+        btn_exit.pack(side=tk.LEFT, padx=2)
+        
+        # Center - Header title
         header = tk.Label(
             header_frame,
             text="FOURIER-DOMAIN IMAGE ENCRYPTOR (DRPE)",
@@ -45,22 +54,15 @@ class DRPEApp:
             fg="#00FF66",
             bg="#121212",
         )
-        header.pack(side=tk.LEFT, expand=True)
+        header.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=20)
         
-        # Right side buttons
+        # Right side - Reset button
         btn_reset = tk.Button(
             header_frame, text="Reset", command=self.reset_all,
             bg="#FF6B35", fg="#FFFFFF", activebackground="#FF8C5A", activeforeground="#FFFFFF",
             font=("Consolas", 9, "bold"), width=8
         )
         btn_reset.pack(side=tk.RIGHT, padx=2)
-        
-        btn_exit = tk.Button(
-            header_frame, text="Exit", command=self.exit_app,
-            bg="#DC2F02", fg="#FFFFFF", activebackground="#F77F00", activeforeground="#FFFFFF",
-            font=("Consolas", 9, "bold"), width=8
-        )
-        btn_exit.pack(side=tk.RIGHT, padx=2)
 
 
         # Main Split Container
@@ -442,6 +444,7 @@ class DRPEApp:
         mode = self.cipher_mode.get()
         save_path = filedialog.asksaveasfilename(
             defaultextension=".npz",
+            initialfile="key.npz",
             filetypes=[("NumPy Zip Archive", "*.npz")]
         )
         if not save_path:
@@ -494,7 +497,11 @@ class DRPEApp:
         if self.ciphertext is None:
             messagebox.showwarning("Warning", "No ciphertext to export.")
             return
-        save_path = filedialog.asksaveasfilename(defaultextension=".npy", filetypes=[("NumPy Array", "*.npy")])
+        save_path = filedialog.asksaveasfilename(
+            defaultextension=".npy",
+            initialfile="ciphertext.npy",
+            filetypes=[("NumPy Array", "*.npy")]
+        )
         if save_path:
             np.save(save_path, self.ciphertext)
             messagebox.showinfo("Success", "Ciphertext exported successfully.")

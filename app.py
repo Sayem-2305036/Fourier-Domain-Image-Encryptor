@@ -145,13 +145,17 @@ class DRPEApp:
         btn_export_keys.pack(pady=4)
         self.btn_export_keys = btn_export_keys  # Keep reference to update label
 
-        # Status message - below Export Keys button
+        # Status message frame - fixed height to prevent layout shifts
+        status_frame = tk.Frame(left_panel, bg="#1E1E1E", height=28)
+        status_frame.pack(pady=6, fill=tk.X)
+        status_frame.pack_propagate(False)
+        
         self.lbl_global_status = tk.Label(
-            left_panel, text="Status: Awaiting image...", 
+            status_frame, text="Status: Awaiting image...", 
             font=("Consolas", 9), fg="#888888", bg="#1E1E1E",
-            anchor="center", justify="center"
+            width=35, anchor="center", justify="center", wraplength=250
         )
-        self.lbl_global_status.pack(pady=6, fill=tk.X)
+        self.lbl_global_status.pack(fill=tk.BOTH, expand=True)
 
 
 

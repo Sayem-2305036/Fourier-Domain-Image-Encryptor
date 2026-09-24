@@ -47,29 +47,25 @@ class DRPEApp:
         )
         header.pack(side=tk.LEFT, expand=True, fill=tk.X)
         
-        # Control bar with buttons and status
-        control_frame = tk.Frame(self.root, bg="#121212", height=40)
-        control_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=3)
-        control_frame.pack_propagate(False)
+        # Top right - Buttons (Reset then Exit)
+        button_frame = tk.Frame(self.root, bg="#121212", height=40)
+        button_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=3)
+        button_frame.pack_propagate(False)
         
-        # Left side - Status message (centered)
-        self.lbl_global_status = tk.Label(
-            control_frame, text="Status: Awaiting image...", 
-            font=("Consolas", 9), fg="#888888", bg="#121212",
-            width=50, anchor="center", justify="center"
-        )
-        self.lbl_global_status.pack(side=tk.LEFT, expand=True, fill=tk.X)
+        # Spacer on left
+        spacer = tk.Frame(button_frame, bg="#121212")
+        spacer.pack(side=tk.LEFT, expand=True, fill=tk.X)
         
         # Right side - Buttons (Reset then Exit)
         btn_reset = tk.Button(
-            control_frame, text="Reset", command=self.reset_all,
+            button_frame, text="Reset", command=self.reset_all,
             bg="#FF6B35", fg="#FFFFFF", activebackground="#FF8C5A", activeforeground="#FFFFFF",
             font=("Consolas", 9, "bold"), width=8
         )
         btn_reset.pack(side=tk.RIGHT, padx=2)
         
         btn_exit = tk.Button(
-            control_frame, text="Exit", command=self.exit_app,
+            button_frame, text="Exit", command=self.exit_app,
             bg="#DC2F02", fg="#FFFFFF", activebackground="#F77F00", activeforeground="#FFFFFF",
             font=("Consolas", 9, "bold"), width=8
         )
@@ -148,6 +144,14 @@ class DRPEApp:
         )
         btn_export_keys.pack(pady=4)
         self.btn_export_keys = btn_export_keys  # Keep reference to update label
+
+        # Status message - below Export Keys button
+        self.lbl_global_status = tk.Label(
+            left_panel, text="Status: Awaiting image...", 
+            font=("Consolas", 9), fg="#888888", bg="#1E1E1E",
+            width=35, anchor="w", justify="left"
+        )
+        self.lbl_global_status.pack(pady=6, fill=tk.X)
 
 
 

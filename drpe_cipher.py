@@ -27,9 +27,9 @@ def encrypt_image(image: np.ndarray, mask1: np.ndarray, mask2: np.ndarray) -> np
 
         # Apply the complex phase masks
         step1 = channel * phase_mask1
-        step2 = np.fft.fft2(step1)
+        step2 = my_fft2(step1)
         step3 = step2 * phase_mask2
-        cipher_channel = np.fft.ifft2(step3)
+        cipher_channel = my_ifft2(step3)
 
         encrypted_channels.append(cipher_channel)
 
@@ -51,9 +51,9 @@ def decrypt_image(ciphertext: np.ndarray, mask1: np.ndarray, mask2: np.ndarray) 
         cipher_channel = ciphertext[:, :, i]
 
         # Reverse the standard DRPE math
-        step1 = np.fft.fft2(cipher_channel)
+        step1 = my_fft2(cipher_channel)
         step2 = step1 * inv_phase_mask2 
-        step3 = np.fft.ifft2(step2)
+        step3 = my_ifft2(step2)
         
         # Multiply by opposite phase of mask1 and extract physical brightness
         recovered_channel = np.abs(step3 * inv_phase_mask1)

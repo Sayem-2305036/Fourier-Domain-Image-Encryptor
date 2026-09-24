@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from drpe_cipher import generate_phase_mask, encrypt_image, decrypt_image,calculate_mse , inject_key_error, apply_cropping_attack, apply_channel_noise
+from fourier_transforms import my_fft2, my_ifft2
 
 class DRPEApp:
     def __init__(self, root: tk.Tk):
@@ -32,16 +33,33 @@ class DRPEApp:
         self._setup_ui()
 
     def _setup_ui(self):
-        # Header
+        # Header with exit/reset buttons
+        header_frame = tk.Frame(self.root, bg="#121212")
+        header_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
+        
         header = tk.Label(
-            self.root,
+            header_frame,
             text="FOURIER-DOMAIN IMAGE ENCRYPTOR (DRPE)",
             font=("Consolas", 16, "bold"),
             fg="#00FF66",
             bg="#121212",
-            pady=10
         )
-        header.pack(side=tk.TOP, fill=tk.X)
+        header.pack(side=tk.LEFT, expand=True)
+        
+        # Right side buttons
+        btn_reset = tk.Button(
+            header_frame, text="Reset", command=self.reset_all,
+            bg="#FF6B35", fg="#FFFFFF", activebackground="#FF8C5A", activeforeground="#FFFFFF",
+            font=("Consolas", 9, "bold"), width=8
+        )
+        btn_reset.pack(side=tk.RIGHT, padx=2)
+        
+        btn_exit = tk.Button(
+            header_frame, text="Exit", command=self.exit_app,
+            bg="#DC2F02", fg="#FFFFFF", activebackground="#F77F00", activeforeground="#FFFFFF",
+            font=("Consolas", 9, "bold"), width=8
+        )
+        btn_exit.pack(side=tk.RIGHT, padx=2)
 
 
         # Main Split Container
@@ -218,9 +236,10 @@ class DRPEApp:
         )
         self.lbl_mse.pack(pady=6)
 
-        # Matplotlib Display Area (Bottom)
-        self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(1, 3, figsize=(10, 3.8))
+        # Matplotlib Display Area (Bottom) - with fixed dimensions
+        self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(1, 3, figsize=(14, 4))
         self.fig.patch.set_facecolor('#121212')
+        self.fig.tight_layout(pad=1.0)  # Prevent layout shift
 
         for ax, title in zip([self.ax1, self.ax2, self.ax3], ["Original Image", "Ciphertext (Magnitude)", "Decrypted Output"]):
             ax.set_title(title, color="#FFFFFF", fontsize=10, fontname="DejaVu Sans")
@@ -228,7 +247,8 @@ class DRPEApp:
             ax.set_facecolor('#1E1E1E')
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
-        self.canvas.get_tk_widget().pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, padx=10, pady=10)
+        canvas_widget = self.canvas.get_tk_widget()
+        canvas_widget.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
     def load_image(self):
         file_path = filedialog.askopenfilename(
@@ -361,9 +381,9 @@ class DRPEApp:
                 for i in range(3):
                     channel = test_cipher[:, :, i]
                     # Convert to waves, shift low frequencies to the center, filter, and convert back
-                    freq = np.fft.fftshift(np.fft.fft2(channel))
+                    freq = np.fft.fftshift(my_fft2(channel))
                     freq_filtered = apply_low_pass_filter(freq, bandwidth)
-                    channel_filtered = np.fft.ifft2(np.fft.ifftshift(freq_filtered))
+                    channel_filtered = my_ifft2(np.fft.ifftshift(freq_filtered))
                     filtered_channels.append(channel_filtered)
                     
                 test_cipher = np.dstack(filtered_channels)
@@ -495,6 +515,38 @@ class DRPEApp:
             self.ax2.axis("off")
             self.canvas.draw()
             self.lbl_mse.config(text="Status: Ciphertext Loaded.")
+
+    def reset_all(self):
+        """Clears all panels and resets state."""
+        self.original_image = None
+        self.ciphertext = None
+        self.decrypted_image = None
+        self.r1 = None
+        self.r2 = None
+        self.advanced_keys = None
+        
+        # Clear all axes
+        self.ax1.clear()
+        self.ax2.clear()
+        self.ax3.clear()
+        
+        self.ax1.set_title("Original Image", color="#FFFFFF")
+        self.ax2.set_title("Ciphertext (Magnitude)", color="#FFFFFF")
+        self.ax3.set_title("Decrypted Output", color="#FFFFFF")
+        
+        for ax in [self.ax1, self.ax2, self.ax3]:
+            ax.axis("off")
+            ax.set_facecolor('#1E1E1E')
+        
+        self.canvas.draw()
+        
+        self.lbl_enc_status.config(text="Status: Reset. Awaiting image...", fg="#888888")
+        self.lbl_mse.config(text="Reconstruction MSE: N/A")
+        
+    def exit_app(self):
+        """Terminates the application."""
+        self.root.quit()
+        self.root.destroy()
 
     
 if __name__ == "__main__":

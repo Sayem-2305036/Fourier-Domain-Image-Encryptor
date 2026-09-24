@@ -33,36 +33,47 @@ class DRPEApp:
         self._setup_ui()
 
     def _setup_ui(self):
-        # Header with exit/reset buttons
-        header_frame = tk.Frame(self.root, bg="#121212", height=50)
-        header_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
-        header_frame.pack_propagate(False)  # Prevent size changes
+        # Top header with title
+        title_frame = tk.Frame(self.root, bg="#121212", height=30)
+        title_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
+        title_frame.pack_propagate(False)
         
-        # Left side - Exit button
-        btn_exit = tk.Button(
-            header_frame, text="Exit", command=self.exit_app,
-            bg="#DC2F02", fg="#FFFFFF", activebackground="#F77F00", activeforeground="#FFFFFF",
-            font=("Consolas", 9, "bold"), width=8
-        )
-        btn_exit.pack(side=tk.LEFT, padx=2)
-        
-        # Center - Header title
         header = tk.Label(
-            header_frame,
+            title_frame,
             text="FOURIER-DOMAIN IMAGE ENCRYPTOR (DRPE)",
             font=("Consolas", 16, "bold"),
             fg="#00FF66",
             bg="#121212",
         )
-        header.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=20)
+        header.pack(side=tk.LEFT, expand=True, fill=tk.X)
         
-        # Right side - Reset button
+        # Control bar with buttons and status
+        control_frame = tk.Frame(self.root, bg="#121212", height=40)
+        control_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=3)
+        control_frame.pack_propagate(False)
+        
+        # Left side - Status message (centered)
+        self.lbl_global_status = tk.Label(
+            control_frame, text="Status: Awaiting image...", 
+            font=("Consolas", 9), fg="#888888", bg="#121212",
+            width=50, anchor="center", justify="center"
+        )
+        self.lbl_global_status.pack(side=tk.LEFT, expand=True, fill=tk.X)
+        
+        # Right side - Buttons (Reset then Exit)
         btn_reset = tk.Button(
-            header_frame, text="Reset", command=self.reset_all,
+            control_frame, text="Reset", command=self.reset_all,
             bg="#FF6B35", fg="#FFFFFF", activebackground="#FF8C5A", activeforeground="#FFFFFF",
             font=("Consolas", 9, "bold"), width=8
         )
         btn_reset.pack(side=tk.RIGHT, padx=2)
+        
+        btn_exit = tk.Button(
+            control_frame, text="Exit", command=self.exit_app,
+            bg="#DC2F02", fg="#FFFFFF", activebackground="#F77F00", activeforeground="#FFFFFF",
+            font=("Consolas", 9, "bold"), width=8
+        )
+        btn_exit.pack(side=tk.RIGHT, padx=2)
 
 
         # Main Split Container
@@ -140,12 +151,6 @@ class DRPEApp:
 
 
 
-
-        self.lbl_enc_status = tk.Label(
-            left_panel, text="Status: Awaiting image...", font=("Consolas", 9),
-            fg="#888888", bg="#1E1E1E", width=35, anchor="w", justify="left"
-        )
-        self.lbl_enc_status.pack(pady=4, fill=tk.X)
 
         # Panel 2: Decryption & Testing (Right)
         right_panel = tk.LabelFrame(
@@ -291,7 +296,7 @@ class DRPEApp:
         self.ax1.axis("off")
         self.canvas.draw_idle()
 
-        self.lbl_enc_status.config(text=f"Loaded: {os.path.basename(file_path)}", fg="#00FF66")
+        self.lbl_global_status.config(text=f"Loaded: {os.path.basename(file_path)}", fg="#00FF66")
 
     def generate_keys(self):
         if self.original_image is None:
@@ -303,12 +308,12 @@ class DRPEApp:
         if self.cipher_mode.get() == "DRPE":
             self.r1 = np.random.uniform(0, 2 * np.pi, shape)
             self.r2 = np.random.uniform(0, 2 * np.pi, shape)
-            self.lbl_enc_status.config(text="Status: Standard Phase masks R1 & R2 generated.", 
+            self.lbl_global_status.config(text="Status: Standard Phase masks R1 & R2 generated.", 
                                        fg="#00FF66")
             
         elif self.cipher_mode.get() == "ADVANCED":
             self.r1, self.r2 = None, None
-            self.lbl_enc_status.config(text="Status: Keys are created automatically during encryption.",
+            self.lbl_global_status.config(text="Status: Keys are created automatically during encryption.",
                                         fg="#00FF66")
 
         
@@ -332,13 +337,13 @@ class DRPEApp:
             # Run the old linear encryption
             
             self.ciphertext = encrypt_image(self.original_image, self.r1, self.r2)
-            self.lbl_enc_status.config(text="Status: Standard DRPE Encryption complete.", fg="#00FF66")
+            self.lbl_global_status.config(text="Status: Standard DRPE Encryption complete.", fg="#00FF66")
             
         elif mode == "ADVANCED":
             from advanced_drpe import encrypt_advanced
             # Run the new pipeline and save the dynamic keys it creates
             self.ciphertext, self.advanced_keys = encrypt_advanced(self.original_image)
-            self.lbl_enc_status.config(text="Status: Advanced DRPE Encryption complete.", fg="#00FF66")
+            self.lbl_global_status.config(text="Status: Advanced DRPE Encryption complete.", fg="#00FF66")
 
         # # Ciphertext is complex: visualize magnitude distribution
         # cipher_display = np.abs(self.ciphertext)
@@ -356,7 +361,7 @@ class DRPEApp:
         self.ax2.clear()
         self.ax2.imshow(cipher_display) # Removed cmap="inferno"
         self.ax2.set_title("Ciphertext |C(x,y)| (White Noise)", color="#FFFFFF")
-        self.lbl_enc_status.config(text="Status: Encryption complete.", fg="#00FF66")
+        self.lbl_global_status.config(text="Status: Encryption complete.", fg="#00FF66")
         self.canvas.draw_idle()
 
 
@@ -458,9 +463,11 @@ class DRPEApp:
 
     def export_keys(self):
         mode = self.cipher_mode.get()
+        # Use different default filename based on mode
+        default_filename = "seed.npz" if mode == "ADVANCED" else "key.npz"
         save_path = filedialog.asksaveasfilename(
             defaultextension=".npz",
-            initialfile="key.npz",
+            initialfile=default_filename,
             filetypes=[("NumPy Zip Archive", "*.npz")]
         )
         if not save_path:
@@ -472,6 +479,7 @@ class DRPEApp:
                 return
             # Save the big 2D arrays
             np.savez(save_path, r1=self.r1, r2=self.r2)
+            messagebox.showinfo("Export Successful", f"Keys saved to {os.path.basename(save_path)}")
             
         elif mode == "ADVANCED":
             if self.advanced_keys is None:
@@ -480,8 +488,7 @@ class DRPEApp:
             # Save the four dynamic decimal values
             s1, s2, ax, ay = self.advanced_keys
             np.savez(save_path, s1=s1, s2=s2, ax=ax, ay=ay)
-            
-        messagebox.showinfo("Export Successful", f"Keys saved to {os.path.basename(save_path)}")
+            messagebox.showinfo("Export Successful", f"Seeds saved to {os.path.basename(save_path)}")
 
 
     def import_keys(self):
@@ -564,7 +571,7 @@ class DRPEApp:
         
         self.canvas.draw_idle()
         
-        self.lbl_enc_status.config(text="Status: Reset. Awaiting image...", fg="#888888")
+        self.lbl_global_status.config(text="Status: Reset. Awaiting image...", fg="#888888")
         self.lbl_mse.config(text="Reconstruction MSE: N/A")
         
     def exit_app(self):

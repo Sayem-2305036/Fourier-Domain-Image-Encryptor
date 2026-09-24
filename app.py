@@ -34,8 +34,9 @@ class DRPEApp:
 
     def _setup_ui(self):
         # Header with exit/reset buttons
-        header_frame = tk.Frame(self.root, bg="#121212")
+        header_frame = tk.Frame(self.root, bg="#121212", height=50)
         header_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
+        header_frame.pack_propagate(False)  # Prevent size changes
         
         header = tk.Label(
             header_frame,
@@ -138,9 +139,9 @@ class DRPEApp:
 
         self.lbl_enc_status = tk.Label(
             left_panel, text="Status: Awaiting image...", font=("Consolas", 9),
-            fg="#888888", bg="#1E1E1E"
+            fg="#888888", bg="#1E1E1E", width=35, anchor="w", justify="left"
         )
-        self.lbl_enc_status.pack(pady=4)
+        self.lbl_enc_status.pack(pady=4, fill=tk.X)
 
         # Panel 2: Decryption & Testing (Right)
         right_panel = tk.LabelFrame(
@@ -232,14 +233,14 @@ class DRPEApp:
 
         self.lbl_mse = tk.Label(
             right_panel, text="Reconstruction MSE: N/A", font=("Consolas", 10, "bold"),
-            fg="#FFB703", bg="#1E1E1E"
+            fg="#FFB703", bg="#1E1E1E", width=35, anchor="w", justify="left"
         )
-        self.lbl_mse.pack(pady=6)
+        self.lbl_mse.pack(pady=6, fill=tk.X)
 
         # Matplotlib Display Area (Bottom) - with fixed dimensions
         self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(1, 3, figsize=(14, 4))
         self.fig.patch.set_facecolor('#121212')
-        self.fig.tight_layout(pad=1.0)  # Prevent layout shift
+        self.fig.subplots_adjust(left=0.08, right=0.95, top=0.92, bottom=0.1, wspace=0.3)
 
         for ax, title in zip([self.ax1, self.ax2, self.ax3], ["Original Image", "Ciphertext (Magnitude)", "Decrypted Output"]):
             ax.set_title(title, color="#FFFFFF", fontsize=10, fontname="DejaVu Sans")
@@ -270,7 +271,7 @@ class DRPEApp:
         self.ax1.imshow(display_img)
         self.ax1.set_title(f"Original ({self.img_dim}x{self.img_dim})", color="#FFFFFF")
         self.ax1.axis("off")
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
         self.lbl_enc_status.config(text=f"Loaded: {os.path.basename(file_path)}", fg="#00FF66")
 
@@ -328,7 +329,7 @@ class DRPEApp:
         # self.ax2.imshow(cipher_display, cmap="inferno")
         # self.ax2.set_title("Ciphertext |C(x,y)| (White Noise)", color="#FFFFFF")
         # self.ax2.axis("off")
-        # self.canvas.draw()
+        # self.canvas.draw_idle()
 
         # Extract magnitude and scale it for the screen
         cipher_display = np.abs(self.ciphertext)
@@ -338,7 +339,7 @@ class DRPEApp:
         self.ax2.imshow(cipher_display) # Removed cmap="inferno"
         self.ax2.set_title("Ciphertext |C(x,y)| (White Noise)", color="#FFFFFF")
         self.lbl_enc_status.config(text="Status: Encryption complete.", fg="#00FF66")
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
 
 #Fully modified by Sayem
@@ -433,7 +434,7 @@ class DRPEApp:
         self.ax3.imshow(dec_display) 
         self.ax3.set_title("Decrypted Image", color="#FFFFFF") # Restored title
         self.ax3.axis("off") # Restored axis removal
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
 
 
@@ -513,7 +514,7 @@ class DRPEApp:
             self.ax2.imshow(cipher_display) # Removed cmap="inferno"
             self.ax2.set_title("Ciphertext |C(x,y)|", color="#FFFFFF")
             self.ax2.axis("off")
-            self.canvas.draw()
+            self.canvas.draw_idle()
             self.lbl_mse.config(text="Status: Ciphertext Loaded.")
 
     def reset_all(self):
@@ -538,7 +539,7 @@ class DRPEApp:
             ax.axis("off")
             ax.set_facecolor('#1E1E1E')
         
-        self.canvas.draw()
+        self.canvas.draw_idle()
         
         self.lbl_enc_status.config(text="Status: Reset. Awaiting image...", fg="#888888")
         self.lbl_mse.config(text="Reconstruction MSE: N/A")

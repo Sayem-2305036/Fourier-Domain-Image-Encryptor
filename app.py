@@ -149,7 +149,7 @@ class DRPEApp:
         self.lbl_global_status = tk.Label(
             left_panel, text="Status: Awaiting image...", 
             font=("Consolas", 9), fg="#888888", bg="#1E1E1E",
-            width=35, anchor="w", justify="left"
+            anchor="center", justify="center"
         )
         self.lbl_global_status.pack(pady=6, fill=tk.X)
 

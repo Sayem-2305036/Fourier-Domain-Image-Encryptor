@@ -106,6 +106,17 @@ python app.py
 
 ```
 
+### Note: Virtual Environment (Optional)
+It's recommended to use a virtual environment to manage dependencies. You can create one using:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+``` 
+
+And then install the required packages within this environment, using
+```bash
+pip install -r requirements.txt
+```
 
 
 ### Testing the System

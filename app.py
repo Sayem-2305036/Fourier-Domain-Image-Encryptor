@@ -1,20 +1,81 @@
 import os
 import tkinter as tk
 from tkinter import filedialog, messagebox
+from tkinter import font as tkfont
 import numpy as np
 from PIL import Image
+import customtkinter as ctk
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from drpe_cipher import generate_phase_mask, encrypt_image, decrypt_image,calculate_mse , inject_key_error, apply_cropping_attack, apply_channel_noise
 from fourier_transforms import my_fft2, my_ifft2
 
+
+# =============================================================================
+# THEME  (single source of truth for every colour used in the UI and the plots)
+# =============================================================================
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("dark-blue")
+
+BG        = "#0B0E14"   # window background
+CARD      = "#141922"   # panels + plot card (the Matplotlib figure uses this too)
+CARD_EDGE = "#232B3A"   # 1px card outline
+INSET     = "#0E1218"   # recessed pills (status / MSE read-outs)
+TRACK     = "#2A3244"   # slider tracks, radio outlines
+TEXT      = "#E6EAF2"
+TEXT_DIM  = "#8A93A6"
+
+GREEN = "#00FF66"       # brand / success  (your original header + status colour)
+CYAN  = "#00E5FF"       # encryption panel
+PINK  = "#FF007F"       # decryption panel
+AMBER = "#FFB703"       # MSE read-out
+
+# (normal, hover) pairs - taken from your original button colours
+BTN_NEUTRAL = ("#232B3A", "#313C52")
+BTN_PRIMARY = ("#005F73", "#0A9396")
+BTN_DANGER  = ("#9B2226", "#AE2012")
+BTN_RESET   = ("#FF6B35", "#FF8C5A")
+BTN_EXIT    = ("#DC2F02", "#F77F00")
+
+RADIUS = 12             # corner radius for every button
+
+
+# -----------------------------------------------------------------------------
+# Compatibility shims.
+# Your existing methods call  widget.config(text=..., fg=...)  (the classic Tk
+# API).  CustomTkinter widgets use .configure(text=..., text_color=...), so these
+# two thin subclasses translate the old option names.  This is what lets every
+# one of your functions stay exactly as you wrote it.
+# -----------------------------------------------------------------------------
+class _TkCompat:
+    _ALIASES = {"fg": "text_color", "bg": "fg_color"}
+
+    def configure(self, require_redraw=False, **kwargs):
+        for old, new in self._ALIASES.items():
+            if old in kwargs:
+                kwargs[new] = kwargs.pop(old)
+        super().configure(require_redraw=require_redraw, **kwargs)
+
+    config = configure
+
+
+class UILabel(_TkCompat, ctk.CTkLabel):
+    pass
+
+
+class UIButton(_TkCompat, ctk.CTkButton):
+    pass
+
+
 class DRPEApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Fourier-Domain Image Encryptor (DRPE)")
-        self.root.geometry("1200x750")
-        self.root.configure(bg="#121212")
+        self.root.geometry("1240x820")
+        self.root.minsize(1100, 740)
+        self.root.configure(fg_color=BG)
 
         # State storage
         self.original_image: np.ndarray | None = None
@@ -32,243 +93,278 @@ class DRPEApp:
 
         self._setup_ui()
 
+    # ------------------------------------------------------------------
+    # UI-only helpers (no logic - they just build widgets)
+    # ------------------------------------------------------------------
+    def _font(self, size, weight="normal", mono=False):
+        family = self._mono_family if mono else self._ui_family
+        return ctk.CTkFont(family=family, size=size, weight=weight)
+
+    def _ui_button(self, parent, text, command, colors, bold=False, height=42):
+        return UIButton(
+            parent, text=text, command=command,
+            height=height, corner_radius=RADIUS,
+            fg_color=colors[0], hover_color=colors[1], text_color="#FFFFFF",
+            font=self._font(13, "bold" if bold else "normal"),
+        )
+
+    def _panel(self, parent, column):
+        panel = ctk.CTkFrame(
+            parent, fg_color=CARD, corner_radius=16,
+            border_width=1, border_color=CARD_EDGE,
+        )
+        panel.grid(row=0, column=column, sticky="nsew", padx=6)
+        panel.grid_columnconfigure((0, 1), weight=1, uniform=f"panel{column}")
+        return panel
+
+    def _panel_header(self, panel, text, color):
+        row = ctk.CTkFrame(panel, fg_color="transparent")
+        row.grid(row=0, column=0, columnspan=2, sticky="ew", padx=18, pady=(16, 8))
+        ctk.CTkFrame(row, width=4, height=18, corner_radius=2, fg_color=color).pack(side="left")
+        ctk.CTkLabel(
+            row, text=text, text_color=color, font=self._font(15, "bold"),
+        ).pack(side="left", padx=(10, 0))
+
+    def _pill(self, parent, row, pady):
+        pill = ctk.CTkFrame(parent, fg_color=INSET, corner_radius=10)
+        pill.grid(row=row, column=0, columnspan=2, sticky="ew", padx=16, pady=pady)
+        return pill
+
+    def _build_slider(self, parent, row, column, label_text, variable,
+                      from_, to, steps, accent, fmt, label_color=TEXT):
+        """Label on top, slider + live value read-out underneath."""
+        cell = ctk.CTkFrame(parent, fg_color="transparent")
+        left = 16 if column == 0 else 8
+        right = 8 if column == 0 else 16
+        cell.grid(row=row, column=column, sticky="ew", padx=(left, right), pady=5)
+        cell.grid_columnconfigure(0, weight=1)
+
+        label = UILabel(cell, text=label_text, text_color=label_color,
+                        font=self._font(12), anchor="w")
+        label.grid(row=0, column=0, columnspan=2, sticky="w")
+
+        slider = ctk.CTkSlider(
+            cell, variable=variable, from_=from_, to=to, number_of_steps=steps,
+            height=16, fg_color=TRACK, progress_color=accent,
+            button_color=TEXT, button_hover_color="#FFFFFF",
+        )
+        slider.grid(row=1, column=0, sticky="ew", pady=(5, 0))
+
+        readout = ctk.CTkLabel(
+            cell, text=format(variable.get(), fmt), width=46, anchor="e",
+            font=self._font(12, "bold", mono=True), text_color=accent,
+        )
+        readout.grid(row=1, column=1, padx=(8, 0), pady=(5, 0))
+        variable.trace_add("write", lambda *_: readout.configure(text=format(variable.get(), fmt)))
+        return label, slider, readout
+
+    # ------------------------------------------------------------------
+    # MAIN LAYOUT
+    # ------------------------------------------------------------------
     def _setup_ui(self):
-        # Top header with title
-        title_frame = tk.Frame(self.root, bg="#121212", height=30)
-        title_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
-        title_frame.pack_propagate(False)
-        
-        header = tk.Label(
+        # Pick the best fonts the current OS actually has
+        installed = set(tkfont.families(self.root))
+        self._ui_family = next((f for f in ("Segoe UI", "SF Pro Text", "Helvetica Neue", "Inter", "Roboto", "DejaVu Sans")
+                                if f in installed), "Arial")
+        self._mono_family = next((f for f in ("Consolas", "Menlo", "DejaVu Sans Mono", "Courier New")
+                                  if f in installed), "Courier")
+
+        # Root grid: header / mode bar / control panels / plots (plots take the spare space)
+        self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_rowconfigure(3, weight=1)
+
+        # ---------------- Header: title (left) + Reset / Exit (right) ----------------
+        title_frame = ctk.CTkFrame(self.root, fg_color="transparent")
+        title_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 6))
+        title_frame.grid_columnconfigure(0, weight=1)
+
+        header = UILabel(
             title_frame,
             text="FOURIER-DOMAIN IMAGE ENCRYPTOR (DRPE)",
-            font=("Consolas", 16, "bold"),
-            fg="#00FF66",
-            bg="#121212",
+            font=self._font(24, "bold", mono=True),
+            text_color=GREEN,
         )
-        header.pack(side=tk.LEFT, expand=True, fill=tk.X)
-        
-        # Top right - Buttons (Reset then Exit)
-        button_frame = tk.Frame(self.root, bg="#121212", height=40)
-        button_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=3)
-        button_frame.pack_propagate(False)
-        
-        # Spacer on left
-        spacer = tk.Frame(button_frame, bg="#121212")
-        spacer.pack(side=tk.LEFT, expand=True, fill=tk.X)
-        
-        # Right side - Buttons (Reset then Exit)
-        btn_reset = tk.Button(
+        header.grid(row=0, column=0, sticky="w")
+
+        button_frame = ctk.CTkFrame(title_frame, fg_color="transparent")
+        button_frame.grid(row=0, column=1, sticky="e")
+
+        btn_reset = UIButton(
             button_frame, text="Reset", command=self.reset_all,
-            bg="#FF6B35", fg="#FFFFFF", activebackground="#FF8C5A", activeforeground="#FFFFFF",
-            font=("Consolas", 9, "bold"), width=8
+            width=92, height=36, corner_radius=18,
+            fg_color=BTN_RESET[0], hover_color=BTN_RESET[1], text_color="#FFFFFF",
+            font=self._font(13, "bold"),
         )
-        btn_reset.pack(side=tk.RIGHT, padx=2)
-        
-        btn_exit = tk.Button(
+        btn_reset.pack(side="left", padx=4)
+
+        btn_exit = UIButton(
             button_frame, text="Exit", command=self.exit_app,
-            bg="#DC2F02", fg="#FFFFFF", activebackground="#F77F00", activeforeground="#FFFFFF",
-            font=("Consolas", 9, "bold"), width=8
+            width=92, height=36, corner_radius=18,
+            fg_color=BTN_EXIT[0], hover_color=BTN_EXIT[1], text_color="#FFFFFF",
+            font=self._font(13, "bold"),
         )
-        btn_exit.pack(side=tk.RIGHT, padx=2)
+        btn_exit.pack(side="left", padx=4)
 
-
-        # Main Split Container
-        main_frame = tk.Frame(self.root, bg="#121212")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
-
-        # Algorithm Selector Mode
-        #added after nprs 
+        # ---------------- Algorithm selector mode ----------------
+        #added after nprs
         self.cipher_mode = tk.StringVar(value="DRPE")
         self.cipher_mode.trace_add("write", lambda *args: self._update_key_button_labels())
-        
-        mode_frame = tk.Frame(main_frame, bg="#121212")
-        mode_frame.pack(fill=tk.X, pady=5)
-        
-        tk.Radiobutton(mode_frame, text="Standard DRPE (Linear)", variable=self.cipher_mode, value="DRPE", 
-                       bg="#121212", fg="#008612", selectcolor="#2A2A2A", 
-                       font=("Consolas", 10, "bold")).pack(side=tk.LEFT, padx=20)
-        tk.Radiobutton(mode_frame, text="Advanced DRPE", variable=self.cipher_mode, value="ADVANCED", 
-                       bg="#121212", fg="#FF007F", selectcolor="#2A2A2A",
-                         font=("Consolas", 10, "bold")).pack(side=tk.LEFT)
 
-        
+        mode_frame = ctk.CTkFrame(
+            self.root, fg_color=CARD, corner_radius=14,
+            border_width=1, border_color=CARD_EDGE,
+        )
+        mode_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=6)
+
+        ctk.CTkLabel(
+            mode_frame, text="Cipher mode", text_color=TEXT_DIM, font=self._font(13),
+        ).pack(side="left", padx=(20, 24), pady=12)
+
+        ctk.CTkRadioButton(
+            mode_frame, text="Standard DRPE (Linear)", variable=self.cipher_mode, value="DRPE",
+            fg_color="#00C853", hover_color="#00E676", border_color=TRACK,
+            text_color="#3DDC84", font=self._font(13, "bold"),
+        ).pack(side="left", padx=(0, 28), pady=12)
+
+        ctk.CTkRadioButton(
+            mode_frame, text="Advanced DRPE", variable=self.cipher_mode, value="ADVANCED",
+            fg_color=PINK, hover_color="#FF3D9A", border_color=TRACK,
+            text_color="#FF4DA6", font=self._font(13, "bold"),
+        ).pack(side="left", pady=12)
+
+        # ---------------- Control panels (side by side) ----------------
+        main_frame = ctk.CTkFrame(self.root, fg_color="transparent")
+        main_frame.grid(row=2, column=0, sticky="ew", padx=14, pady=4)
+        main_frame.grid_columnconfigure((0, 1), weight=1, uniform="panels")
+        main_frame.grid_rowconfigure(0, weight=1)
 
         # Panel 1: Input & Encryption (Left)
-        left_panel = tk.LabelFrame(
-            main_frame,
-            text="  Input & Encryption Panel ",
-            font=("Consolas", 11, "bold"),
-            fg="#00E5FF",
-            bg="#1E1E1E",
-            padx=10,
-            pady=10
-        )
-        left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
+        left_panel = self._panel(main_frame, column=0)
+        self._panel_header(left_panel, "Input & Encryption Panel", CYAN)
 
-        btn_load = tk.Button(
-            left_panel, text="Load Image", command=self.load_image,
-            bg="#2A2A2A", fg="#FFFFFF", activebackground="#3A3A3A", activeforeground="#FFFFFF",
-            font=("Consolas", 10), width=18
-        )
-        btn_load.pack(pady=4)
+        btn_load = self._ui_button(left_panel, "Load Image", self.load_image, BTN_NEUTRAL)
+        btn_load.grid(row=1, column=0, sticky="ew", padx=(16, 6), pady=6)
 
-        btn_gen_keys = tk.Button(
-            left_panel, text="Generate Phase Keys", command=self.generate_keys,
-            bg="#2A2A2A", fg="#FFFFFF", activebackground="#3A3A3A", activeforeground="#FFFFFF",
-            font=("Consolas", 10), width=18
-        )
-        btn_gen_keys.pack(pady=4)
+        btn_gen_keys = self._ui_button(left_panel, "Generate Phase Keys", self.generate_keys, BTN_NEUTRAL)
+        btn_gen_keys.grid(row=1, column=1, sticky="ew", padx=(6, 16), pady=6)
 
-        btn_encrypt = tk.Button(
-            left_panel, text="Encrypt Image", command=self.run_encryption,
-            bg="#005F73", fg="#FFFFFF", activebackground="#0A9396", activeforeground="#FFFFFF",
-            font=("Consolas", 10, "bold"), width=18
-        )
-        btn_encrypt.pack(pady=4)
+        btn_encrypt = self._ui_button(left_panel, "Encrypt Image", self.run_encryption, BTN_PRIMARY, bold=True)
+        btn_encrypt.grid(row=2, column=0, sticky="ew", padx=(16, 6), pady=6)
 
         # new button's added here to export ciphertext
-        # 
-        #  
-        btn_export_ciphertext = tk.Button(
-            left_panel, text="Export CipherText", command=self.export_ciphertext,
-            bg="#005F73", fg="#FFFFFF", activebackground="#0A9396", activeforeground="#FFFFFF",
-            font=("Consolas", 10, "bold"), width=18
-        )
-        btn_export_ciphertext.pack(pady=4)
+        #
+        #
+        btn_export_ciphertext = self._ui_button(left_panel, "Export CipherText", self.export_ciphertext, BTN_PRIMARY, bold=True)
+        btn_export_ciphertext.grid(row=2, column=1, sticky="ew", padx=(6, 16), pady=6)
 
-        btn_export_keys = tk.Button(
-            left_panel, text="Export Keys (.npz)", command=self.export_keys,
-            bg="#2A2A2A", fg="#FFFFFF", activebackground="#3A3A3A", activeforeground="#FFFFFF",
-            font=("Consolas", 10), width=18
-        )
-        btn_export_keys.pack(pady=4)
+        btn_export_keys = self._ui_button(left_panel, "Export Keys (.npz)", self.export_keys, BTN_NEUTRAL)
+        btn_export_keys.grid(row=3, column=0, columnspan=2, sticky="ew", padx=16, pady=6)
         self.btn_export_keys = btn_export_keys  # Keep reference to update label
 
-        # Status message frame - fixed height to prevent layout shifts
-        status_frame = tk.Frame(left_panel, bg="#1E1E1E", height=28)
-        status_frame.pack(pady=6, fill=tk.X)
-        status_frame.pack_propagate(False)
-        
-        self.lbl_global_status = tk.Label(
-            status_frame, text="Status: Awaiting image...", 
-            font=("Consolas", 9), fg="#888888", bg="#1E1E1E",
-            width=35, anchor="center", justify="center", wraplength=250
+        # Status message pill - fixed slot so the layout never jumps
+        status_frame = self._pill(left_panel, row=4, pady=(10, 16))
+        self.lbl_global_status = UILabel(
+            status_frame, text="Status: Awaiting image...",
+            font=self._font(12, mono=True), text_color="#888888",
+            anchor="center", justify="center", wraplength=480,
         )
-        self.lbl_global_status.pack(fill=tk.BOTH, expand=True)
+        self.lbl_global_status.pack(fill="both", expand=True, padx=14, pady=9)
 
-
-
+        left_panel.grid_rowconfigure((1, 2, 3), weight=1)
 
         # Panel 2: Decryption & Testing (Right)
-        right_panel = tk.LabelFrame(
-            main_frame,
-            text=" Decryption & Testing Panel ",
-            font=("Consolas", 11, "bold"),
-            fg="#FF007F",
-            bg="#1E1E1E",
-            padx=10,
-            pady=10
-        )
-        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
-
+        right_panel = self._panel(main_frame, column=1)
+        self._panel_header(right_panel, "Decryption & Testing Panel", PINK)
 
         #buttons from importing keys and cyphertext
+        btn_import_ciphertext = self._ui_button(right_panel, "Import CipherText", self.import_ciphertext, BTN_PRIMARY, bold=True)
+        btn_import_ciphertext.grid(row=1, column=0, sticky="ew", padx=(16, 6), pady=6)
 
-
-        btn_import_ciphertext = tk.Button(
-            right_panel, text="Import CipherText", command=self.import_ciphertext,
-            bg="#005F73", fg="#FFFFFF", activebackground="#0A9396", activeforeground="#FFFFFF",
-            font=("Consolas", 10, "bold"), width=18
-        )
-        btn_import_ciphertext.pack(pady=4)
-        
-        btn_import_keys = tk.Button(
-            right_panel, text="Import Keys (.npz)", command=self.import_keys,
-            bg="#2A2A2A", fg="#FFFFFF", activebackground="#3A3A3A", activeforeground="#FFFFFF",
-            font=("Consolas", 10), width=18
-        )
-        btn_import_keys.pack(pady=4)
+        btn_import_keys = self._ui_button(right_panel, "Import Keys (.npz)", self.import_keys, BTN_NEUTRAL)
+        btn_import_keys.grid(row=1, column=1, sticky="ew", padx=(6, 16), pady=6)
         self.btn_import_keys = btn_import_keys  # Keep reference to update label
 
-        btn_decrypt = tk.Button(
-            right_panel, text="Decrypt Image", command=self.run_decryption,
-            bg="#9B2226", fg="#FFFFFF", activebackground="#AE2012", activeforeground="#FFFFFF",
-            font=("Consolas", 10, "bold"), width=18
-        )
-        btn_decrypt.pack(pady=4)
+        btn_decrypt = self._ui_button(right_panel, "Decrypt Image", self.run_decryption, BTN_DANGER, bold=True)
+        btn_decrypt.grid(row=2, column=0, columnspan=2, sticky="ew", padx=16, pady=6)
 
-        
-
+        ctk.CTkFrame(right_panel, height=1, corner_radius=0, fg_color=CARD_EDGE).grid(
+            row=3, column=0, columnspan=2, sticky="ew", padx=16, pady=(10, 6))
 
         # --- Sayem CONTROLS ---
         # Key Sensitivity Slider
-        slider_frame = tk.Frame(right_panel, bg="#1E1E1E")
-        slider_frame.pack(fill=tk.X, pady=10)
-        self.lbl_key_error = tk.Label(slider_frame, text="Key Error %:", fg="#FFFFFF", bg="#1E1E1E", font=("Consolas", 9))
-        self.lbl_key_error.pack(side=tk.LEFT)
-        self.scale_error = tk.Scale(
-            slider_frame, from_=0.0, to=5.0, resolution=0.1, orient=tk.HORIZONTAL,
-            variable=self.key_error_var, bg="#1E1E1E", fg="#FFFFFF", highlightthickness=0
+        self.lbl_key_error, self.scale_error, _ = self._build_slider(
+            right_panel, row=4, column=0, label_text="Key Error %:",
+            variable=self.key_error_var, from_=0.0, to=5.0, steps=50,
+            accent=PINK, fmt=".1f",
         )
-        self.scale_error.pack(side=tk.RIGHT, fill=tk.X, expand=True)
 
         # --- ATTACK SLIDERS ---
         # Cropping Attack Slider (0% to 100%)
-        crop_frame = tk.Frame(right_panel, bg="#1E1E1E")
-        crop_frame.pack(fill=tk.X, pady=5)
-        tk.Label(crop_frame, text="Crop Area %:", fg="#FFFFFF", bg="#1E1E1E", font=("Consolas", 9)).pack(side=tk.LEFT)
         self.crop_val_var = tk.DoubleVar(value=0.0)
-        self.scale_crop = tk.Scale(
-            crop_frame, from_=0.0, to=100.0, resolution=1.0, orient=tk.HORIZONTAL,
-            variable=self.crop_val_var, bg="#1E1E1E", fg="#FFFFFF", highlightthickness=0
+        _, self.scale_crop, _ = self._build_slider(
+            right_panel, row=4, column=1, label_text="Crop Area %:",
+            variable=self.crop_val_var, from_=0.0, to=100.0, steps=100,
+            accent=PINK, fmt=".0f",
         )
-        self.scale_crop.pack(side=tk.RIGHT, fill=tk.X, expand=True)
 
         # Noise Attack Slider (0% to 100%)
-        noise_frame = tk.Frame(right_panel, bg="#1E1E1E")
-        noise_frame.pack(fill=tk.X, pady=5)
-        tk.Label(noise_frame, text="Noise Power %:", fg="#FFFFFF", bg="#1E1E1E", font=("Consolas", 9)).pack(side=tk.LEFT)
         self.noise_val_var = tk.DoubleVar(value=0.0)
-        self.scale_noise = tk.Scale(
-            noise_frame, from_=0.0, to=100.0, resolution=1.0, orient=tk.HORIZONTAL,
-            variable=self.noise_val_var, bg="#1E1E1E", fg="#FFFFFF", highlightthickness=0
+        _, self.scale_noise, _ = self._build_slider(
+            right_panel, row=5, column=0, label_text="Noise Power %:",
+            variable=self.noise_val_var, from_=0.0, to=100.0, steps=100,
+            accent=PINK, fmt=".0f",
         )
-        self.scale_noise.pack(side=tk.RIGHT, fill=tk.X, expand=True)
         # -----------------------------
 
         # Bandwidth / Low-Pass Filter Slider
         self.bandwidth_var = tk.DoubleVar(value=1.0)
-        
-        bw_frame = tk.Frame(right_panel, bg="#121212")
-        bw_frame.pack(fill=tk.X, pady=5)
-        tk.Label(bw_frame, text="Bandwidth % (1.0 = Perfect):", bg="#121212", fg="#00FF66",
-                  width=25, anchor="e").pack(side=tk.LEFT)
-        tk.Scale(bw_frame, variable=self.bandwidth_var, from_=0.01, to=1.0, resolution=0.01, orient=tk.HORIZONTAL, 
-                 bg="#121212", fg="white", highlightthickness=0).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-
-
-
-
-        self.lbl_mse = tk.Label(
-            right_panel, text="Reconstruction MSE: N/A", font=("Consolas", 10, "bold"),
-            fg="#FFB703", bg="#1E1E1E", width=35, anchor="w", justify="left"
+        self._build_slider(
+            right_panel, row=5, column=1, label_text="Bandwidth % (1.0 = Perfect):",
+            variable=self.bandwidth_var, from_=0.01, to=1.0, steps=99,
+            accent=GREEN, fmt=".2f", label_color=GREEN,
         )
-        self.lbl_mse.pack(pady=6, fill=tk.X)
 
-        # Matplotlib Display Area (Bottom) - with fixed dimensions
-        self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(1, 3, figsize=(14, 4))
-        self.fig.patch.set_facecolor('#121212')
-        self.fig.subplots_adjust(left=0.08, right=0.95, top=0.92, bottom=0.1, wspace=0.3)
+        mse_frame = self._pill(right_panel, row=6, pady=(10, 16))
+        self.lbl_mse = UILabel(
+            mse_frame, text="Reconstruction MSE: N/A", font=self._font(13, "bold", mono=True),
+            text_color=AMBER, anchor="w", justify="left",
+        )
+        self.lbl_mse.pack(fill="x", padx=14, pady=9)
+
+        # ---------------- Matplotlib display area (bottom) ----------------
+        # Dark theme applied globally so that ax.clear() in your functions keeps it.
+        plt.rcParams.update({
+            "figure.facecolor": CARD, "axes.facecolor": CARD, "savefig.facecolor": CARD,
+            "axes.edgecolor": CARD, "axes.linewidth": 0,
+            "axes.spines.top": False, "axes.spines.right": False,
+            "axes.spines.bottom": False, "axes.spines.left": False,
+            "text.color": TEXT, "axes.labelcolor": TEXT,
+            "xtick.color": TEXT_DIM, "ytick.color": TEXT_DIM,
+            "font.family": "DejaVu Sans",
+            "axes.titlesize": 11, "axes.titleweight": "bold", "axes.titlepad": 10,
+        })
+
+        plot_card = ctk.CTkFrame(
+            self.root, fg_color=CARD, corner_radius=16,
+            border_width=1, border_color=CARD_EDGE,
+        )
+        plot_card.grid(row=3, column=0, sticky="nsew", padx=20, pady=(6, 18))
+
+        # Figure (not pyplot.subplots) so Matplotlib doesn't open a hidden second Tk window
+        self.fig = Figure(figsize=(14, 4))
+        self.ax1, self.ax2, self.ax3 = self.fig.subplots(1, 3)
+        self.fig.patch.set_facecolor(CARD)
+        self.fig.subplots_adjust(left=0.02, right=0.98, top=0.90, bottom=0.03, wspace=0.06)
 
         for ax, title in zip([self.ax1, self.ax2, self.ax3], ["Original Image", "Ciphertext (Magnitude)", "Decrypted Output"]):
-            ax.set_title(title, color="#FFFFFF", fontsize=10, fontname="DejaVu Sans")
+            ax.set_title(title, color="#FFFFFF")
             ax.axis("off")
-            ax.set_facecolor('#1E1E1E')
+            ax.set_facecolor(CARD)
 
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=plot_card)
         canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, padx=10, pady=10)
+        canvas_widget.configure(bg=CARD, highlightthickness=0, bd=0)
+        canvas_widget.pack(fill="both", expand=True, padx=12, pady=12)
 
     def _update_key_button_labels(self):
         """Update button labels based on cipher mode."""
@@ -371,9 +467,6 @@ class DRPEApp:
         self.ax2.set_title("Ciphertext |C(x,y)| (White Noise)", color="#FFFFFF")
         self.lbl_global_status.config(text="Status: Encryption complete.", fg="#00FF66")
         self.canvas.draw_idle()
-
-
-#Fully modified by Sayem
 
 
     def run_decryption(self):
@@ -589,6 +682,6 @@ class DRPEApp:
 
     
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = ctk.CTk()
     app = DRPEApp(root)
     root.mainloop()

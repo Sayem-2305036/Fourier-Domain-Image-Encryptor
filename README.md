@@ -93,7 +93,7 @@ To demonstrate how these algorithms perform in the real world, the application i
 Ensure you have Python 3.x installed along with the required scientific and UI libraries:
 
 ```bash
-pip install numpy matplotlib pillow PyWavelets
+pip install numpy matplotlib pillow PyWavelets tkinter customtkinter
 
 ```
 

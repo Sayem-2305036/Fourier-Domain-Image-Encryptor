@@ -2,3 +2,5 @@
    matplotlib
    pillow
    PyWavelets
+   tkinter
+   customtkinter

@@ -427,9 +427,6 @@ class DRPEApp:
             messagebox.showwarning("Warning", "Load an image first.")
             return
 
-        #Don't know if I should keep this part or not
-        # if self.r1 is None or self.r2 is None:
-        #     self.generate_keys()
 
         
         mode = self.cipher_mode.get()
